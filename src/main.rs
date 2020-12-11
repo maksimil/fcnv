@@ -1,9 +1,11 @@
+use ft::{index, transform};
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use svg2polylines::parse;
 
 pub mod c128;
+pub mod ft;
 
 use c128::Complex;
 
@@ -29,4 +31,6 @@ fn main() {
         .into_iter()
         .map(Complex::from)
         .collect();
+
+    let c = transform(line, 10_000);
 }
