@@ -1,5 +1,5 @@
+use clap::clap_app;
 use ft::{transform, unindex};
-use std::env;
 use std::fs::{read_to_string, write};
 use svg2polylines::parse;
 
@@ -9,13 +9,21 @@ pub mod ft;
 use c128::{Complex, PI, TPI};
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let matches = clap_app!(fncv =>
+        (version: "1.0")
+        (author: "Maxim Kosterov <maxim.kosterov@gmail.com>")
+        (about: "Makes a cool animation from given svg path")
+        (@arg FILE: +required "Sets the input file to use")
+        (@arg OUTPUT: -o --out +takes_value "Sets the output file (is <FILE>_.svg by default)")
+        (@arg FRAMES: -f --frames +takes_value "Sets the number of frames in animation")
+        (@arg DURATION: --dur +takes_value "Sets the duration of the animation")
+        (@arg DEPTH: -d --depth +takes_value "Sets the depth of transform")
+    )
+    .get_matches();
 
-    if args.len() < 2 {
-        panic!("Format of call: fcnv <path>");
-    }
+    let fname = matches.value_of("FILE").expect("Could not get file name");
 
-    let s = read_to_string(&args[1]).expect("Could not read .svg file");
+    let s = read_to_string(fname).expect("Could not read .svg file");
 
     let mut plines = parse(&s).expect("Could not parse .svg file");
 
@@ -29,14 +37,28 @@ fn main() {
         .map(Complex::from)
         .collect();
 
-    let depth = 500;
+    let depth = matches
+        .value_of("DEPTH")
+        .unwrap_or("100")
+        .parse::<usize>()
+        .expect("Was not able to parse a usize from DEPTH argument");
 
     let c = transform(path, depth);
 
-    let frames = 600;
-    let time = 10;
+    let frames = matches
+        .value_of("FRAMES")
+        .unwrap_or("600")
+        .parse::<usize>()
+        .expect("Was not able to parse a usize from FRAMES argument");
+    let time = matches
+        .value_of("DURATION")
+        .unwrap_or("10")
+        .parse::<usize>()
+        .expect("Was not able to parse a usize from DURATION argument");
 
-    let (width, height) = (800, 600);
+    let default_output_path = format!("{}_.svg", fname);
+
+    let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
 
     let mut dstring = String::new();
     let mut tstring = String::new();
@@ -81,10 +103,10 @@ fn main() {
     pstring.pop();
 
     let svg = format!("
-    <svg width=\"{width}\" height=\"{height}\" xmlns=\"http://www.w3.org/2000/svg\"><g>
+    <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
     <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
     <path d=\"\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
-    </g></svg>", width=width, height=height, dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring);
+    </g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring);
 
-    write(format!("{}_.svg", &args[1]), svg).expect("Unable to save file");
+    write(out_fp, svg).expect("Unable to save file");
 }
