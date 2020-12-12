@@ -18,6 +18,7 @@ fn main() {
         (@arg FRAMES: -f --frames +takes_value "Sets the number of frames in animation")
         (@arg DURATION: --dur +takes_value "Sets the duration of the animation")
         (@arg DEPTH: -d --depth +takes_value "Sets the depth of transform")
+        (@arg FORMAT: --format +takes_value "Sets format of outputting .svg (fs: frame by frame, f: animation)")
     )
     .get_matches();
 
@@ -43,70 +44,172 @@ fn main() {
         .parse::<usize>()
         .expect("Was not able to parse a usize from DEPTH argument");
 
-    let c = transform(path, depth);
+    let form = matches.value_of("FORMAT").unwrap_or("f");
 
-    let frames = matches
-        .value_of("FRAMES")
-        .unwrap_or("600")
-        .parse::<usize>()
-        .expect("Was not able to parse a usize from FRAMES argument");
-    let time = matches
-        .value_of("DURATION")
-        .unwrap_or("10")
-        .parse::<usize>()
-        .expect("Was not able to parse a usize from DURATION argument");
+    match form {
+        // several files
+        "fs" => {
+            let c = transform(path, depth);
 
-    let default_output_path = format!("{}_.svg", fname);
+            let frames = matches
+                .value_of("FRAMES")
+                .unwrap_or("600")
+                .parse::<usize>()
+                .expect("Was not able to parse a usize from FRAMES argument");
 
-    let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
+            let default_output_path = format!("{}_frames", fname);
 
-    let mut dstring = String::new();
-    let mut tstring = String::new();
+            let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
 
-    // path
-    let mut lpstring = String::new();
-    let mut pstring = String::new();
+            let mut pstring = String::new();
 
-    for frame in 0..=frames {
-        let t = (frame as f64) / (frames as f64);
+            for frame in 0..=frames {
+                let t = (frame as f64) / (frames as f64);
 
-        tstring.push_str(&format!("{};", t.to_string()));
+                let last = {
+                    let mut last = c[0];
 
-        let last = {
-            let mut last = c[0];
+                    for i in 1..c.len() {
+                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
+                    }
 
-            dstring.push_str(&format!("M {} {} ", last.x, last.y));
+                    last
+                };
 
-            for i in 1..c.len() {
-                last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
-
-                dstring.push_str(&format!("L {} {}", last.x, last.y));
+                if frame == 0 {
+                    pstring.push_str(&format!("M {} {}", last.x, last.y));
+                } else {
+                    pstring.push_str(&format!("L {} {}", last.x, last.y));
+                }
             }
 
-            last
-        };
+            let mut lpstring = String::new();
 
-        if frame == 0 {
-            lpstring.push_str(&format!("M {} {}", last.x, last.y));
-        } else {
-            lpstring.push_str(&format!("L {} {}", last.x, last.y));
+            for frame in 0..=frames {
+                let mut dstring = String::new();
+
+                let t = (frame as f64) / (frames as f64);
+
+                let last = {
+                    let mut last = c[0];
+
+                    dstring.push_str(&format!("M {} {} ", last.x, last.y));
+
+                    for i in 1..c.len() {
+                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
+
+                        dstring.push_str(&format!("L {} {}", last.x, last.y));
+                    }
+
+                    last
+                };
+
+                if frame == 0 {
+                    lpstring.push_str(&format!("M {} {}", last.x, last.y));
+                } else {
+                    lpstring.push_str(&format!("L {} {}", last.x, last.y));
+                }
+
+                {
+                    let svg = format!(
+                        "
+        <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
+        <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
+        <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
+        </g></svg>",
+                        dstring = dstring,
+                        lpstring = lpstring
+                    );
+
+                    write(format!("{}/frame-{}.svg", out_fp, frame), svg)
+                        .expect("Unable to save file");
+                }
+
+                {
+                    let svg = format!(
+                        "
+                    <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
+                    <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
+                    <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
+                    </g></svg>",
+                        dstring = dstring,
+                        lpstring = pstring
+                    );
+
+                    write(format!("{}/frame-{}.svg", out_fp, frame + 600), svg)
+                        .expect("Unable to save file");
+                }
+            }
         }
+        // one file
+        "f" => {
+            let c = transform(path, depth);
 
-        pstring.push_str(&lpstring);
+            let frames = matches
+                .value_of("FRAMES")
+                .unwrap_or("600")
+                .parse::<usize>()
+                .expect("Was not able to parse a usize from FRAMES argument");
+            let time = matches
+                .value_of("DURATION")
+                .unwrap_or("10")
+                .parse::<usize>()
+                .expect("Was not able to parse a usize from DURATION argument");
 
-        dstring.push_str(";");
-        pstring.push_str(";");
-    }
+            let default_output_path = format!("{}_.svg", fname);
 
-    tstring.pop();
-    dstring.pop();
-    pstring.pop();
+            let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
 
-    let svg = format!("
+            let mut dstring = String::new();
+            let mut tstring = String::new();
+
+            // path
+            let mut lpstring = String::new();
+            let mut pstring = String::new();
+
+            for frame in 0..=frames {
+                let t = (frame as f64) / (frames as f64);
+
+                tstring.push_str(&format!("{};", t.to_string()));
+
+                let last = {
+                    let mut last = c[0];
+
+                    dstring.push_str(&format!("M {} {} ", last.x, last.y));
+
+                    for i in 1..c.len() {
+                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
+
+                        dstring.push_str(&format!("L {} {}", last.x, last.y));
+                    }
+
+                    last
+                };
+
+                if frame == 0 {
+                    lpstring.push_str(&format!("M {} {}", last.x, last.y));
+                } else {
+                    lpstring.push_str(&format!("L {} {}", last.x, last.y));
+                }
+
+                pstring.push_str(&lpstring);
+
+                dstring.push_str(";");
+                pstring.push_str(";");
+            }
+
+            tstring.pop();
+            dstring.pop();
+            pstring.pop();
+
+            let svg = format!("
     <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
     <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
     <path d=\"\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
     </g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring);
 
-    write(out_fp, svg).expect("Unable to save file");
+            write(out_fp, svg).expect("Unable to save file");
+        }
+        _ => panic!("Form output of type \"{}\" is not supported", form),
+    }
 }
