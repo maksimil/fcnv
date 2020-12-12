@@ -19,6 +19,7 @@ fn main() {
         (@arg DURATION: --dur +takes_value "Sets the duration of the animation")
         (@arg DEPTH: -d --depth +takes_value "Sets the depth of transform")
         (@arg FORMAT: --format +takes_value "Sets format of outputting .svg (fs: frame by frame, f: animation)")
+        (@arg MERGE: --merge "If on, merges all the paths in file to a single path")
     )
     .get_matches();
 
@@ -32,11 +33,18 @@ fn main() {
         panic!("No lines found in file");
     }
 
-    let path: Vec<Complex> = plines
-        .swap_remove(0)
-        .into_iter()
-        .map(Complex::from)
-        .collect();
+    let path: Vec<Complex> = if matches.is_present("MERGE") {
+        plines.into_iter().fold(Vec::new(), |mut acc, val| {
+            acc.extend(val.into_iter().map(Complex::from));
+            acc
+        })
+    } else {
+        plines
+            .swap_remove(0)
+            .into_iter()
+            .map(Complex::from)
+            .collect()
+    };
 
     let depth = matches
         .value_of("DEPTH")
