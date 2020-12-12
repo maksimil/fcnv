@@ -1,4 +1,5 @@
 use std::convert::From;
+pub use std::f64::consts::PI;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use svg2polylines::CoordinatePair;
 
@@ -10,10 +11,10 @@ pub struct Complex {
 
 pub const I: Complex = Complex { x: 0.0, y: 1.0 };
 pub const ZERO: Complex = Complex { x: 0.0, y: 0.0 };
-pub const TPI: f64 = 6.28318530718;
+pub const TPI: f64 = 2.0 * PI;
 pub const IN2P: Complex = Complex {
     x: 0.0,
-    y: 0.15915494309,
+    y: 1.0 / TPI,
 };
 
 impl Complex {
@@ -40,7 +41,15 @@ impl Complex {
     }
 
     pub fn is_nan(&self) -> bool {
-        self.x.is_nan() || self.y.is_nan()
+        self.x.is_nan() || self.y.is_nan() || !(self.x.is_finite() && self.y.is_finite())
+    }
+
+    pub fn zin(self) -> Complex {
+        if self.is_nan() {
+            ZERO
+        } else {
+            self
+        }
     }
 }
 
