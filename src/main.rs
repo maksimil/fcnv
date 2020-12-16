@@ -177,7 +177,7 @@ fn main() {
                     height = height
                 );
 
-                write(format!("{}/frame-{}.svg", out_fp, frame + 600), svg)
+                write(format!("{}/frame-{}.svg", out_fp, frame + frames), svg)
                     .expect("Unable to save file");
             }
         }
