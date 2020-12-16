@@ -1,5 +1,6 @@
 use clap::clap_app;
 use ft::{transform, unindex};
+use quick_xml::{events::Event, Reader};
 use std::fs::{read_to_string, write};
 use svg2polylines::parse;
 
@@ -28,6 +29,38 @@ fn main() {
     let s = read_to_string(fname).expect("Could not read .svg file");
 
     let mut plines = parse(&s).expect("Could not parse .svg file");
+
+    let (width, height) = {
+        let mut width = String::new();
+        let mut height = String::new();
+        let mut reader = Reader::from_str(&s);
+        // let mut txt = Vec::new();
+        let mut buff = Vec::new();
+
+        loop {
+            match reader.read_event(&mut buff) {
+                Ok(Event::Start(ref e)) => match e.name() {
+                    b"svg" => {
+                        for attr in e.attributes() {
+                            if let Ok(attr) = attr {
+                                let key = String::from_utf8_lossy(attr.key);
+                                if key == "width" {
+                                    width = String::from_utf8(attr.value.to_vec())
+                                        .expect("Failed to parse svg width");
+                                } else if key == "height" {
+                                    height = String::from_utf8(attr.value.to_vec())
+                                        .expect("Failed to parse svg height");
+                                }
+                            }
+                        }
+                        break (width, height);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    };
 
     if plines.len() == 0 {
         panic!("No lines found in file");
@@ -118,12 +151,14 @@ fn main() {
             {
                 let svg = format!(
                     "
-            <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
+            <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
             <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
             <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
             </g></svg>",
                     dstring = dstring,
-                    lpstring = lpstring
+                    lpstring = lpstring,
+                    width = width,
+                    height = height
                 );
 
                 write(format!("{}/frame-{}.svg", out_fp, frame), svg).expect("Unable to save file");
@@ -132,12 +167,14 @@ fn main() {
             {
                 let svg = format!(
                     "
-            <svg xmlns=\"http://www.w3.org/2000/svg\"><g>
+            <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
             <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
             <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
             </g></svg>",
                     dstring = dstring,
-                    lpstring = pstring
+                    lpstring = pstring,
+                    width = width,
+                    height = height
                 );
 
                 write(format!("{}/frame-{}.svg", out_fp, frame + 600), svg)
@@ -205,10 +242,10 @@ fn main() {
         pstring.pop();
 
         let svg = format!("
-<svg xmlns=\"http://www.w3.org/2000/svg\"><g>
+<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
 <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
 <path d=\"\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
-</g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring);
+</g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring, width = width, height = height);
 
         write(out_fp, svg).expect("Unable to save file");
     }

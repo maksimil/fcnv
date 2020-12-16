@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 svg2polylines = "0.5.2"
 clap = "2.33.3"
+quick-xml = "0.13.3"
