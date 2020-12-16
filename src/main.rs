@@ -22,8 +22,14 @@ fn main() {
         (@arg FILES: --files "Sets output mode to output frames instead of animation")
         (@arg MERGE: --merge "Merges all the paths in file to a single path")
         (@arg OFFSET: --offset #{2,2} "Sets offset")
+        (@arg STROKE_WIDTH: --sw +takes_value "Sets stroke width in svg")
     )
     .get_matches();
+
+    let sw = matches
+        .value_of("STROKE_WIDTH")
+        .map(|v| v.parse::<f64>().expect("Failed to parse f64 from --sw arg"))
+        .unwrap_or(1.5);
 
     let offset = matches
         .values_of("OFFSET")
@@ -172,13 +178,14 @@ fn main() {
                 let svg = format!(
                     "
             <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-            <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
-            <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
+            <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
+            <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
             </g></svg>",
                     dstring = dstring,
                     lpstring = lpstring,
                     width = width,
-                    height = height
+                    height = height,
+                    sw = sw
                 );
 
                 write(format!("{}/frame-{}.svg", out_fp, frame), svg).expect("Unable to save file");
@@ -188,13 +195,14 @@ fn main() {
                 let svg = format!(
                     "
             <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-            <path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"/>
-            <path d=\"{dstring}\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\" />
+            <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
+            <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
             </g></svg>",
                     dstring = dstring,
                     lpstring = pstring,
                     width = width,
-                    height = height
+                    height = height,
+                    sw = sw
                 );
 
                 write(format!("{}/frame-{}.svg", out_fp, frame + frames), svg)
@@ -263,9 +271,9 @@ fn main() {
 
         let svg = format!("
 <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-<path d=\"{lpstring}\" stroke-width=\"1.5\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
-<path d=\"\" stroke-width=\"1.5\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
-</g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring, width = width, height = height);
+<path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
+<path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
+</g></svg>", dstring=dstring, tstring=tstring, time=time,lpstring=lpstring, pstring=pstring, width = width, height = height, sw = sw);
 
         write(out_fp, svg).expect("Unable to save file");
     }
