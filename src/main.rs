@@ -21,8 +21,20 @@ fn main() {
         (@arg DEPTH: -d --depth +takes_value "Sets the depth of transform")
         (@arg FILES: --files "Sets output mode to output frames instead of animation")
         (@arg MERGE: --merge "Merges all the paths in file to a single path")
+        (@arg OFFSET: --offset #{2,2} "Sets offset")
     )
     .get_matches();
+
+    let offset = matches
+        .values_of("OFFSET")
+        .map(|vs| {
+            vs.map(|v| {
+                v.parse::<f64>()
+                    .expect("Failed to parse f64 from offset parameter")
+            })
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or(vec![0.0, 0.0]);
 
     let fname = matches.value_of("FILE").expect("Could not get file name");
 
@@ -50,6 +62,14 @@ fn main() {
                                 } else if key == "height" {
                                     height = String::from_utf8(attr.value.to_vec())
                                         .expect("Failed to parse svg height");
+                                }
+
+                                if let Ok(pw) = width.parse::<f64>() {
+                                    width = (pw + offset[0]).to_string();
+                                }
+
+                                if let Ok(ph) = height.parse::<f64>() {
+                                    height = (ph + offset[1]).to_string();
                                 }
                             }
                         }
@@ -115,9 +135,9 @@ fn main() {
             };
 
             if frame == 0 {
-                pstring.push_str(&format!("M {} {}", last.x, last.y));
+                pstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
             } else {
-                pstring.push_str(&format!("L {} {}", last.x, last.y));
+                pstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
             }
         }
 
@@ -131,21 +151,21 @@ fn main() {
             let last = {
                 let mut last = c[0];
 
-                dstring.push_str(&format!("M {} {} ", last.x, last.y));
+                dstring.push_str(&format!("M {} {} ", last.x + offset[0], last.y + offset[1]));
 
                 for i in 1..c.len() {
                     last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
 
-                    dstring.push_str(&format!("L {} {}", last.x, last.y));
+                    dstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
                 }
 
                 last
             };
 
             if frame == 0 {
-                lpstring.push_str(&format!("M {} {}", last.x, last.y));
+                lpstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
             } else {
-                lpstring.push_str(&format!("L {} {}", last.x, last.y));
+                lpstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
             }
 
             {
@@ -214,21 +234,21 @@ fn main() {
             let last = {
                 let mut last = c[0];
 
-                dstring.push_str(&format!("M {} {} ", last.x, last.y));
+                dstring.push_str(&format!("M {} {} ", last.x + offset[0], last.y + offset[1]));
 
                 for i in 1..c.len() {
                     last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
 
-                    dstring.push_str(&format!("L {} {}", last.x, last.y));
+                    dstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
                 }
 
                 last
             };
 
             if frame == 0 {
-                lpstring.push_str(&format!("M {} {}", last.x, last.y));
+                lpstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
             } else {
-                lpstring.push_str(&format!("L {} {}", last.x, last.y));
+                lpstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
             }
 
             pstring.push_str(&lpstring);
