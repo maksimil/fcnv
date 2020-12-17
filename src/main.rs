@@ -73,6 +73,7 @@ fn main() {
         (@arg OFFSET: --offset #{2,2} "Sets offset")
         (@arg STROKE_WIDTH: --sw +takes_value "Sets stroke width in svg")
         (@arg MODE: -m --mode +takes_value "Sets the output mode (svg/svgs/pngs)")
+        (@arg BACKGROUND: --back +takes_value "Sets background color (fill attribute)")
     )
     .get_matches();
 
@@ -169,6 +170,9 @@ fn main() {
     // Get frame count
     let frames = get_arg::<usize>(&matches, "FRAMES", 600);
 
+    // Get background color
+    let back = get_arg(&matches, "BACKGROUND", String::from("none"));
+
     // Transform
     // Get depth
     let depth = get_arg::<usize>(&matches, "DEPTH", 100);
@@ -183,8 +187,7 @@ fn main() {
             let duration = get_arg(&matches, "DURATION", 10.0);
 
             // Getting save path
-            let default_output_path = format!("{}_.svg", fname);
-            let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
+            let out_fp = get_arg(&matches, "OUTPUT", format!("{}_.svg", fname));
 
             // Arm and time
             let mut dstring = String::new();
@@ -242,11 +245,16 @@ fn main() {
             pstring.pop();
 
             // Svg generation and writing
-            let svg = format!("
-<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-<path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path>
-<path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path>
-</g></svg>", dstring=dstring, tstring=tstring, time=duration,lpstring=lpstring, pstring=pstring, width = width, height = height, sw = sw);
+            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path><path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path></g></svg>", 
+            dstring = dstring, 
+            tstring = tstring, 
+            time = duration,
+            lpstring = lpstring, 
+            pstring = pstring, 
+            width = width, 
+            height = height, 
+            sw = sw, 
+            back = back);
 
             write(out_fp, svg).expect(SAVE_FAIL);
         }
@@ -330,19 +338,18 @@ fn main() {
                     let sw = sw.clone();
                     let mode = mode.clone();
                     let out_fp = out_fp.clone();
+                    let back = back.clone();
 
                     jobber.queue(move || {
                             let svg = format!(
                                 "
-                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-                                <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
-                                <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
-                                </g></svg>",
+                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
                                 dstring = dstring,
                                 lpstring = lpstring,
                                 width = width,
                                 height = height,
-                                sw = sw
+                                sw = sw,
+                                back = back
                             );
 
                             match mode {
@@ -374,19 +381,17 @@ fn main() {
                     let sw = sw.clone();
                     let mode = mode.clone();
                     let out_fp = out_fp.clone();
+                    let back = back.clone();
 
                     jobber.queue(move || {
                             let svg = format!(
-                                "
-                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-                                <path d=\"{pstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
-                                <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
-                                </g></svg>",
+                                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{pstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
                                 dstring = dstring,
                                 pstring = pstring,
                                 width = width,
                                 height = height,
-                                sw = sw
+                                sw = sw,
+                                back = back,
                             );
 
                             match mode {
