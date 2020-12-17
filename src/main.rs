@@ -1,5 +1,7 @@
+use c128::{Complex, PI, TPI};
 use clap::{clap_app, ArgMatches};
 use ft::{transform, unindex};
+use job::Jobber;
 use quick_xml::{events::Event, Reader};
 use resvg::render;
 use std::{
@@ -12,8 +14,7 @@ use usvg::{Options, Tree};
 
 pub mod c128;
 pub mod ft;
-
-use c128::{Complex, PI, TPI};
+pub mod job;
 
 // Error messages
 const SAVE_FAIL: &str = "Failed to save file";
@@ -38,6 +39,7 @@ where
         .unwrap_or(default)
 }
 
+#[derive(Clone)]
 enum Mode {
     Pngs,
     Svg,
@@ -248,10 +250,15 @@ fn main() {
 
             write(out_fp, svg).expect(SAVE_FAIL);
         }
+        // Generating frames
         mode => {
+            // Making a job queuer for multi-threading
+            let mut jobber = Jobber::new();
             // Getting save path
-            let default_output_path = format!("{}_frames", fname);
-            let out_fp = matches.value_of("OUTPUT").unwrap_or(&default_output_path);
+            let out_fp = get_arg(&matches, "OUTPUT", format!("{}_frames", fname));
+
+            // Testing if path exists
+            write(format!("{}/frames.txt", out_fp), format!("Frames count: {}", 2*frames)).expect(SAVE_FAIL);
 
             // Getting final path string
             let mut pstring = String::new();
@@ -316,66 +323,90 @@ fn main() {
 
                 // Generating frames before the full circle (path is lpstring)
                 {
-                    let svg = format!(
-                        "
-            <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-            <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
-            <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
-            </g></svg>",
-                        dstring = dstring,
-                        lpstring = lpstring,
-                        width = width,
-                        height = height,
-                        sw = sw
-                    );
+                    let width = width.clone();
+                    let height = height.clone();
+                    let dstring = dstring.clone();
+                    let lpstring = lpstring.clone();
+                    let sw = sw.clone();
+                    let mode = mode.clone();
+                    let out_fp = out_fp.clone();
 
-                    match mode {
-                        Mode::Svgs => {
-                            write(format!("{}/frame-{}.svg", out_fp, frame), svg)
-                                .expect("Unable to save file");
+                    jobber.queue(move || {
+                            let svg = format!(
+                                "
+                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
+                                <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
+                                <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
+                                </g></svg>",
+                                dstring = dstring,
+                                lpstring = lpstring,
+                                width = width,
+                                height = height,
+                                sw = sw
+                            );
+
+                            match mode {
+                                Mode::Svgs => {
+                                    write(format!("{}/frame-{}.svg", out_fp, frame), svg)
+                                    .expect("Unable to save file");
+                                }
+                                Mode::Pngs => {
+                                    let tree = Tree::from_str(&svg, &Options::default())
+                                    .expect("Failed to parse generated svg");
+                                    render(&tree, usvg::FitTo::Original, None)
+                                    .expect("Failed to render generated svg")
+                                    .save_png(format!("{}/frame-{}.png", out_fp, frame))
+                                    .expect(SAVE_FAIL);
+                                }
+                                _ => {}
+                            }
                         }
-                        Mode::Pngs => {
-                            let tree = Tree::from_str(&svg, &Options::default())
-                                .expect("Failed to parse generated svg");
-                            render(&tree, usvg::FitTo::Original, None)
-                                .expect("Failed to render generated svg")
-                                .save_png(format!("{}/frame-{}.png", out_fp, frame))
-                                .expect("Failed to save png");
-                        }
-                        _ => {}
-                    }
+                        
+                    );
                 }
 
                 // Generating frames after the full circle (path is pstring)
                 {
-                    let svg = format!(
-                        "
-            <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
-            <path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
-            <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
-            </g></svg>",
-                        dstring = dstring,
-                        lpstring = pstring,
-                        width = width,
-                        height = height,
-                        sw = sw
-                    );
+                    let width = width.clone();
+                    let height = height.clone();
+                    let dstring = dstring.clone();
+                    let pstring = pstring.clone();
+                    let sw = sw.clone();
+                    let mode = mode.clone();
+                    let out_fp = out_fp.clone();
 
-                    match mode {
-                        Mode::Svgs => {
-                            write(format!("{}/frame-{}.svg", out_fp, frame + frames), svg)
-                                .expect("Unable to save file");
+                    jobber.queue(move || {
+                            let svg = format!(
+                                "
+                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g>
+                                <path d=\"{pstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/>
+                                <path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" />
+                                </g></svg>",
+                                dstring = dstring,
+                                pstring = pstring,
+                                width = width,
+                                height = height,
+                                sw = sw
+                            );
+
+                            match mode {
+                                Mode::Svgs => {
+                                    write(format!("{}/frame-{}.svg", out_fp, frame+frames), svg)
+                                    .expect("Unable to save file");
+                                }
+                                Mode::Pngs => {
+                                    let tree = Tree::from_str(&svg, &Options::default())
+                                    .expect("Failed to parse generated svg");
+                                    render(&tree, usvg::FitTo::Original, None)
+                                    .expect("Failed to render generated svg")
+                                    .save_png(format!("{}/frame-{}.png", out_fp, frame+frames))
+                                    .expect(SAVE_FAIL);
+                                }
+                                _ => {}
+                            }
                         }
-                        Mode::Pngs => {
-                            let tree = Tree::from_str(&svg, &Options::default())
-                                .expect("Failed to parse generated svg");
-                            render(&tree, usvg::FitTo::Original, None)
-                                .expect("Failed to render generated svg")
-                                .save_png(format!("{}/frame-{}.png", out_fp, frame + frames))
-                                .expect("Failed to save png");
-                        }
-                        _ => {}
-                    }
+                        
+                    );
                 }
             }
         }
