@@ -1,8 +1,10 @@
 use clap::clap_app;
 use ft::{transform, unindex};
 use quick_xml::{events::Event, Reader};
+use resvg::render;
 use std::fs::{read_to_string, write};
 use svg2polylines::parse;
+use usvg::{Options, Tree};
 
 pub mod c128;
 pub mod ft;
@@ -23,6 +25,7 @@ fn main() {
         (@arg MERGE: --merge "Merges all the paths in file to a single path")
         (@arg OFFSET: --offset #{2,2} "Sets offset")
         (@arg STROKE_WIDTH: --sw +takes_value "Sets stroke width in svg")
+        (@arg PNGS: --pngs "Outputs files as pngs")
     )
     .get_matches();
 
@@ -111,7 +114,9 @@ fn main() {
         .parse::<usize>()
         .expect("Was not able to parse a usize from DEPTH argument");
 
-    if matches.is_present("FILES") {
+    let pngs = matches.is_present("PNGS");
+
+    if matches.is_present("FILES") || pngs {
         // several files
         let c = transform(path, depth);
 
@@ -188,7 +193,17 @@ fn main() {
                     sw = sw
                 );
 
-                write(format!("{}/frame-{}.svg", out_fp, frame), svg).expect("Unable to save file");
+                if pngs {
+                    let tree = Tree::from_str(&svg, &Options::default())
+                        .expect("Failed to parse generated svg");
+                    render(&tree, usvg::FitTo::Original, None)
+                        .expect("Failed to render generated svg")
+                        .save_png(format!("{}/frame-{}.png", out_fp, frame))
+                        .expect("Failed to save png");
+                } else {
+                    write(format!("{}/frame-{}.svg", out_fp, frame), svg)
+                        .expect("Unable to save file");
+                }
             }
 
             {
@@ -205,8 +220,17 @@ fn main() {
                     sw = sw
                 );
 
-                write(format!("{}/frame-{}.svg", out_fp, frame + frames), svg)
-                    .expect("Unable to save file");
+                if pngs {
+                    let tree = Tree::from_str(&svg, &Options::default())
+                        .expect("Failed to parse generated svg");
+                    render(&tree, usvg::FitTo::Original, None)
+                        .expect("Failed to render generated svg")
+                        .save_png(format!("{}/frame-{}.png", out_fp, frame + frames))
+                        .expect("Failed to save png");
+                } else {
+                    write(format!("{}/frame-{}.svg", out_fp, frame + frames), svg)
+                        .expect("Unable to save file");
+                }
             }
         }
     } else {
