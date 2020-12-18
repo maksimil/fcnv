@@ -70,7 +70,7 @@ where
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    // Pngs,
+    Pngs,
     Svg,
     Svgs,
     // Gif,
@@ -79,7 +79,7 @@ pub enum Mode {
 impl From<&str> for Mode {
     fn from(s: &str) -> Mode {
         match s {
-            // "pngs" => Mode::Pngs,
+            "pngs" => Mode::Pngs,
             "svg" => Mode::Svg,
             "svgs" => Mode::Svgs,
             // "gif" => Mode::Gif,
@@ -211,10 +211,10 @@ fn main() {
         "OUTPUT",
         match mode {
             Mode::Svg => format!("{}_.svg", fname),
-            Mode::Svgs => format!("{}_frames", fname),
+            Mode::Svgs | Mode::Pngs => format!("{}_frames", fname),
         },
     );
-    if mode == Mode::Svgs {
+    if mode == Mode::Svgs || mode == Mode::Pngs {
         if !Path::new(&out_fp).is_dir() {
             panic!("Path {} does not exist or is not a directory", out_fp);
         }
