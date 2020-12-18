@@ -5,6 +5,7 @@ use quick_xml::{events::Event, Reader};
 use std::{
     any::type_name,
     fs::{read_to_string, write},
+    path::Path,
     str::FromStr,
 };
 use svg2polylines::parse;
@@ -66,11 +67,11 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 enum Mode {
     // Pngs,
     Svg,
-    // Svgs,
+    Svgs,
     // Gif,
 }
 
@@ -79,7 +80,7 @@ impl From<&str> for Mode {
         match s {
             // "pngs" => Mode::Pngs,
             "svg" => Mode::Svg,
-            // "svgs" => Mode::Svgs,
+            "svgs" => Mode::Svgs,
             // "gif" => Mode::Gif,
             s => panic!("No matching mode found for option {}", s),
         }
@@ -209,9 +210,14 @@ fn main() {
         "OUTPUT",
         match mode {
             Mode::Svg => format!("{}_.svg", fname),
-            // Mode::Svgs | Mode::Pngs => format!("{}_frames", fname),
+            Mode::Svgs => format!("{}_frames", fname),
         },
     );
+    if mode == Mode::Svgs {
+        if !Path::new(&out_fp).is_dir() {
+            panic!("Path {} does not exist or is not a directory", out_fp);
+        }
+    }
 
     // Transform
     // Get depth
@@ -235,7 +241,6 @@ fn main() {
                     c[ci] * Complex::ei(TPI * t * unindex(ci) + ((ci != 0) as u8 as f64) * PI)
                 })
                 .scan(ZERO, |state, off| {
-                    // println!("State: {:?}, Off: {:?}", state, off);
                     *state = *state + off;
                     Some(*state + offset)
                 })
@@ -243,28 +248,30 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
+    // Get iterator over arm and path frames
+    let arm_frames_iter = armframes
+        .iter()
+        .map(|armframe| construct_path(armframe.iter()));
+
+    let path_frames_iter = armframes
+        .iter()
+        .map(|armframe| armframe[armframe.len() - 1])
+        .scan(Vec::new(), |state, point| {
+            state.push(point);
+            Some(state.clone())
+        })
+        .map(|path| construct_path(path.iter()));
+
     match mode {
         Mode::Svg => {
             let time_frames = construct_frames(
                 (0..=frame_count).map(|frame| ((frame as f64) / (frame_count as f64)).to_string()),
             );
 
-            let arm_frames = construct_frames(
-                armframes
-                    .iter()
-                    .map(|armframe| construct_path(armframe.iter())),
-            );
+            let arm_frames = construct_frames(arm_frames_iter);
 
             let (path_frames, last_path_frame) = {
-                let mut path_frames = armframes
-                    .iter()
-                    .map(|armframe| armframe[armframe.len() - 1])
-                    .scan(Vec::new(), |state, point| {
-                        state.push(point);
-                        Some(state.clone())
-                    })
-                    .map(|path| construct_path(path.iter()))
-                    .collect::<Vec<_>>();
+                let mut path_frames = path_frames_iter.collect::<Vec<_>>();
 
                 (
                     construct_frames(path_frames.iter()),
@@ -272,19 +279,58 @@ fn main() {
                 )
             };
 
-            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path><path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path></g></svg>",
+            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpath}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{path}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path><path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{arm}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path></g></svg>",
             width = width,
             height = height,
             back = back,
             time = duration,
             sw = sw,
             tstring = time_frames,
-            lpstring = last_path_frame,
-            pstring = path_frames,
-            dstring = arm_frames
+            lpath = last_path_frame,
+            path = path_frames,
+            arm = arm_frames
             );
 
             write(out_fp, svg).unwrap();
-        } // _ => todo!(),
+        }
+        Mode::Svgs => {
+            let (path_frames_iter, last_path_frame) = {
+                let path_frames_vec = path_frames_iter.collect::<Vec<_>>();
+                let last_path_frame = path_frames_vec[path_frames_vec.len() - 1].clone();
+                (path_frames_vec.into_iter(), last_path_frame)
+            };
+
+            for (frame, (path_frame, arm_frame)) in
+                path_frames_iter.zip(arm_frames_iter).enumerate()
+            {
+                let svg1 = format!(
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{path}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{arm}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
+                    arm = arm_frame,
+                    path = path_frame,
+                    width = width,
+                    height = height,
+                    sw = sw,
+                    back = back,
+                );
+
+                let svg2 = format!(
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{path}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{arm}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
+                    arm = arm_frame,
+                    path = last_path_frame,
+                    width = width,
+                    height = height,
+                    sw = sw,
+                    back = back,
+                );
+
+                write(format!("{}/frame-{}.svg", out_fp, frame), svg1)
+                    .expect("Failed to save frame");
+                write(
+                    format!("{}/frame-{}.svg", out_fp, frame + frame_count),
+                    svg2,
+                )
+                .expect("Failed to save frame");
+            }
+        }
     }
 }
