@@ -1,5 +1,6 @@
 use c128::{Complex, PI, TPI, ZERO};
 use clap::{clap_app, ArgMatches};
+use frame_writer::FrameWriter;
 use ft::{transform, unindex};
 use quick_xml::{events::Event, Reader};
 use std::{
@@ -11,8 +12,8 @@ use std::{
 use svg2polylines::parse;
 
 pub mod c128;
+pub mod frame_writer;
 pub mod ft;
-pub mod job;
 
 fn parse_fail(t: &str, arg: &str) -> String {
     format!("Failed to parse {} from {}", t, arg)
@@ -67,8 +68,8 @@ where
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
-enum Mode {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
     // Pngs,
     Svg,
     Svgs,
@@ -293,13 +294,17 @@ fn main() {
 
             write(out_fp, svg).unwrap();
         }
-        Mode::Svgs => {
+        mode => {
+            // FrameWriter instantiation
+            let mut frame_writer = FrameWriter::new(mode, out_fp);
+            // getting last path frame
             let (path_frames_iter, last_path_frame) = {
                 let path_frames_vec = path_frames_iter.collect::<Vec<_>>();
                 let last_path_frame = path_frames_vec[path_frames_vec.len() - 1].clone();
                 (path_frames_vec.into_iter(), last_path_frame)
             };
 
+            // Iterating through frames
             for (frame, (path_frame, arm_frame)) in
                 path_frames_iter.zip(arm_frames_iter).enumerate()
             {
@@ -323,13 +328,8 @@ fn main() {
                     back = back,
                 );
 
-                write(format!("{}/frame-{}.svg", out_fp, frame), svg1)
-                    .expect("Failed to save frame");
-                write(
-                    format!("{}/frame-{}.svg", out_fp, frame + frame_count),
-                    svg2,
-                )
-                .expect("Failed to save frame");
+                frame_writer.write(svg1, frame);
+                frame_writer.write(svg2, frame + frame_count);
             }
         }
     }
