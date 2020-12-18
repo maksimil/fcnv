@@ -1,23 +1,17 @@
-use c128::{Complex, PI, TPI};
+use c128::{Complex, PI, TPI, ZERO};
 use clap::{clap_app, ArgMatches};
 use ft::{transform, unindex};
-use job::Jobber;
 use quick_xml::{events::Event, Reader};
-use resvg::render;
 use std::{
     any::type_name,
     fs::{read_to_string, write},
     str::FromStr,
 };
 use svg2polylines::parse;
-use usvg::{Options, Tree};
 
 pub mod c128;
 pub mod ft;
 pub mod job;
-
-// Error messages
-const SAVE_FAIL: &str = "Failed to save file";
 
 fn parse_fail(t: &str, arg: &str) -> String {
     format!("Failed to parse {} from {}", t, arg)
@@ -39,20 +33,53 @@ where
         .unwrap_or(default)
 }
 
+fn construct_path<'a>(mut path: impl Iterator<Item = &'a Complex>) -> String {
+    match path.next() {
+        Some(first) => {
+            let mut s = format!("M {} {}", first.x, first.y);
+            for joint in path {
+                s.push_str(&format!("L {} {}", joint.x, joint.y));
+            }
+            s
+        }
+        None => String::from("M 0.0 0.0"),
+    }
+}
+
+fn construct_frames<It>(mut frames: It) -> String
+where
+    It: Iterator,
+    It::Item: AsRef<str>,
+{
+    match frames.next() {
+        Some(first_frame) => {
+            let mut frames_string = String::from(first_frame.as_ref());
+
+            for frame in frames {
+                frames_string.push(';');
+                frames_string.push_str(frame.as_ref());
+            }
+
+            frames_string
+        }
+        None => String::new(),
+    }
+}
+
 #[derive(Clone)]
 enum Mode {
-    Pngs,
+    // Pngs,
     Svg,
-    Svgs,
+    // Svgs,
     // Gif,
 }
 
 impl From<&str> for Mode {
     fn from(s: &str) -> Mode {
         match s {
-            "pngs" => Mode::Pngs,
+            // "pngs" => Mode::Pngs,
             "svg" => Mode::Svg,
-            "svgs" => Mode::Svgs,
+            // "svgs" => Mode::Svgs,
             // "gif" => Mode::Gif,
             s => panic!("No matching mode found for option {}", s),
         }
@@ -168,10 +195,23 @@ fn main() {
     };
 
     // Get frame count
-    let frames = get_arg::<usize>(&matches, "FRAMES", 600);
+    let frame_count = get_arg::<usize>(&matches, "FRAMES", 600);
+
+    // Get duration
+    let duration = get_arg::<f64>(&matches, "DURATION", 10.0);
 
     // Get background color
     let back = get_arg(&matches, "BACKGROUND", String::from("none"));
+
+    // Get out file path
+    let out_fp = get_arg(
+        &matches,
+        "OUTPUT",
+        match mode {
+            Mode::Svg => format!("{}_.svg", fname),
+            // Mode::Svgs | Mode::Pngs => format!("{}_frames", fname),
+        },
+    );
 
     // Transform
     // Get depth
@@ -180,240 +220,71 @@ fn main() {
     // Get coefficients
     let c = transform(path, depth);
 
+    // Get arm positions
+    let offset = Complex {
+        x: offset[0],
+        y: offset[1],
+    };
+
+    let armframes = (0..=frame_count)
+        .map(|frame| {
+            let t = (frame as f64) / (frame_count as f64);
+
+            (0..c.len())
+                .map(|ci| {
+                    c[ci] * Complex::ei(TPI * t * unindex(ci) + ((ci != 0) as u8 as f64) * PI)
+                })
+                .scan(ZERO, |state, off| {
+                    // println!("State: {:?}, Off: {:?}", state, off);
+                    *state = *state + off;
+                    Some(*state + offset)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
     match mode {
-        // Svg animation
         Mode::Svg => {
-            // Animation duration
-            let duration = get_arg(&matches, "DURATION", 10.0);
+            let time_frames = construct_frames(
+                (0..=frame_count).map(|frame| ((frame as f64) / (frame_count as f64)).to_string()),
+            );
 
-            // Getting save path
-            let out_fp = get_arg(&matches, "OUTPUT", format!("{}_.svg", fname));
+            let arm_frames = construct_frames(
+                armframes
+                    .iter()
+                    .map(|armframe| construct_path(armframe.iter())),
+            );
 
-            // Arm and time
-            let mut dstring = String::new();
-            let mut tstring = String::new();
+            let (path_frames, last_path_frame) = {
+                let mut path_frames = armframes
+                    .iter()
+                    .map(|armframe| armframe[armframe.len() - 1])
+                    .scan(Vec::new(), |state, point| {
+                        state.push(point);
+                        Some(state.clone())
+                    })
+                    .map(|path| construct_path(path.iter()))
+                    .collect::<Vec<_>>();
 
-            // Path
-            let mut lpstring = String::new();
-            let mut pstring = String::new();
+                (
+                    construct_frames(path_frames.iter()),
+                    path_frames.swap_remove(path_frames.len() - 1),
+                )
+            };
 
-            // Iterating through frames
-            for frame in 0..=frames {
-                // Time
-                let t = (frame as f64) / (frames as f64);
-
-                // Adding timestamp
-                tstring.push_str(&format!("{};", t.to_string()));
-
-                // Arm pos
-                let last = {
-                    let mut last = c[0];
-
-                    dstring.push_str(&format!("M {} {} ", last.x + offset[0], last.y + offset[1]));
-
-                    for i in 1..c.len() {
-                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
-
-                        dstring.push_str(&format!(
-                            "L {} {}",
-                            last.x + offset[0],
-                            last.y + offset[1]
-                        ));
-                    }
-
-                    last
-                };
-
-                // Pushing pointer pos to last path string
-                if frame == 0 {
-                    lpstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
-                } else {
-                    lpstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
-                }
-
-                // Pushing last path string to path string for animation
-                pstring.push_str(&lpstring);
-
-                // Pushing ; for animation
-                dstring.push_str(";");
-                pstring.push_str(";");
-            }
-
-            // Removing last ;
-            tstring.pop();
-            dstring.pop();
-            pstring.pop();
-
-            // Svg generation and writing
-            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path><path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path></g></svg>", 
-            dstring = dstring, 
-            tstring = tstring, 
+            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"><animate attributeName=\"d\" values=\"{pstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"1\"/></path><path d=\"\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\"><animate attributeName=\"d\" values=\"{dstring}\" keyTimes=\"{tstring}\" dur=\"{time}s\" begin=\"0s\" repeatCount=\"indefinite\"/></path></g></svg>",
+            width = width,
+            height = height,
+            back = back,
             time = duration,
-            lpstring = lpstring, 
-            pstring = pstring, 
-            width = width, 
-            height = height, 
-            sw = sw, 
-            back = back);
+            sw = sw,
+            tstring = time_frames,
+            lpstring = last_path_frame,
+            pstring = path_frames,
+            dstring = arm_frames
+            );
 
-            write(out_fp, svg).expect(SAVE_FAIL);
-        }
-        // Generating frames
-        mode => {
-            // Making a job queuer for multi-threading
-            let mut jobber = Jobber::new();
-            // Getting save path
-            let out_fp = get_arg(&matches, "OUTPUT", format!("{}_frames", fname));
-
-            // Testing if path exists
-            write(format!("{}/frames.txt", out_fp), format!("Frames count: {}", 2*frames)).expect(SAVE_FAIL);
-
-            // Getting final path string
-            let mut pstring = String::new();
-
-            for frame in 0..=frames {
-                // Time
-                let t = (frame as f64) / (frames as f64);
-
-                // Pointer pos
-                let last = {
-                    let mut last = c[0];
-
-                    for i in 1..c.len() {
-                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
-                    }
-
-                    last
-                };
-
-                // Pushing pointer pos
-                if frame == 0 {
-                    pstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
-                } else {
-                    pstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
-                }
-            }
-
-            // Getting path strings for every frame
-            let mut lpstring = String::new();
-
-            for frame in 0..=frames {
-                // Arm string
-                let mut dstring = String::new();
-
-                // Time
-                let t = (frame as f64) / (frames as f64);
-
-                // Arm pos
-                let last = {
-                    let mut last = c[0];
-
-                    dstring.push_str(&format!("M {} {} ", last.x + offset[0], last.y + offset[1]));
-
-                    for i in 1..c.len() {
-                        last = last + c[i] * Complex::ei(TPI * unindex(i) * t + PI);
-
-                        dstring.push_str(&format!(
-                            "L {} {}",
-                            last.x + offset[0],
-                            last.y + offset[1]
-                        ));
-                    }
-
-                    last
-                };
-
-                if frame == 0 {
-                    lpstring.push_str(&format!("M {} {}", last.x + offset[0], last.y + offset[1]));
-                } else {
-                    lpstring.push_str(&format!("L {} {}", last.x + offset[0], last.y + offset[1]));
-                }
-
-                // Generating frames before the full circle (path is lpstring)
-                {
-                    let width = width.clone();
-                    let height = height.clone();
-                    let dstring = dstring.clone();
-                    let lpstring = lpstring.clone();
-                    let sw = sw.clone();
-                    let mode = mode.clone();
-                    let out_fp = out_fp.clone();
-                    let back = back.clone();
-
-                    jobber.queue(move || {
-                            let svg = format!(
-                                "
-                                <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{lpstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
-                                dstring = dstring,
-                                lpstring = lpstring,
-                                width = width,
-                                height = height,
-                                sw = sw,
-                                back = back
-                            );
-
-                            match mode {
-                                Mode::Svgs => {
-                                    write(format!("{}/frame-{}.svg", out_fp, frame), svg)
-                                    .expect("Unable to save file");
-                                }
-                                Mode::Pngs => {
-                                    let tree = Tree::from_str(&svg, &Options::default())
-                                    .expect("Failed to parse generated svg");
-                                    render(&tree, usvg::FitTo::Original, None)
-                                    .expect("Failed to render generated svg")
-                                    .save_png(format!("{}/frame-{}.png", out_fp, frame))
-                                    .expect(SAVE_FAIL);
-                                }
-                                _ => {}
-                            }
-                        }
-                        
-                    );
-                }
-
-                // Generating frames after the full circle (path is pstring)
-                {
-                    let width = width.clone();
-                    let height = height.clone();
-                    let dstring = dstring.clone();
-                    let pstring = pstring.clone();
-                    let sw = sw.clone();
-                    let mode = mode.clone();
-                    let out_fp = out_fp.clone();
-                    let back = back.clone();
-
-                    jobber.queue(move || {
-                            let svg = format!(
-                                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\"><g><rect width=\"100%\" height=\"100%\" fill=\"{back}\"/><path d=\"{pstring}\" stroke-width=\"{sw}\" stroke=\"#0022e4\" fill=\"none\"/><path d=\"{dstring}\" stroke-width=\"{sw}\" stroke=\"#000\" fill=\"none\" /></g></svg>",
-                                dstring = dstring,
-                                pstring = pstring,
-                                width = width,
-                                height = height,
-                                sw = sw,
-                                back = back,
-                            );
-
-                            match mode {
-                                Mode::Svgs => {
-                                    write(format!("{}/frame-{}.svg", out_fp, frame+frames), svg)
-                                    .expect("Unable to save file");
-                                }
-                                Mode::Pngs => {
-                                    let tree = Tree::from_str(&svg, &Options::default())
-                                    .expect("Failed to parse generated svg");
-                                    render(&tree, usvg::FitTo::Original, None)
-                                    .expect("Failed to render generated svg")
-                                    .save_png(format!("{}/frame-{}.png", out_fp, frame+frames))
-                                    .expect(SAVE_FAIL);
-                                }
-                                _ => {}
-                            }
-                        }
-                        
-                    );
-                }
-            }
-        }
+            write(out_fp, svg).unwrap();
+        } // _ => todo!(),
     }
 }
